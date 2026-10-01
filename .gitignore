@@ -1,0 +1,44 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Large model and checkpoint files
+*.safetensors
+*.bin
+*.pt
+optimizer.pt
+rng_state.pth
+scheduler.pt
+
+# Output directories with large files
+output_ft_more_layers_*/
+model_ft_more_layers_*/
+responses_ft_more_layers_*/
+output_*/
+checkpoint-*/
+
+# Logs
+*.log
+nohup.out
+
+# Large data files
+*.jsonl
+*.csv
+
+# Cache
+.cache/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
