@@ -42,3 +42,8 @@ nohup.out
 # OS
 .DS_Store
 Thumbs.db
+paper_reproduction/pythia-410m/
+paper_reproduction/model_ft_more_layers*/
+paper_reproduction/output_ft_more_layers*/
+paper_reproduction/responses_ft_more_layers*/
+paper_reproduction/output.log
