@@ -133,22 +133,32 @@ peft_config = LoraConfig(
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def run(train_dataset,eval_dataset,log_str, args):
+def run(train_dataset, member_eval_dataset, nonmember_eval_dataset, log_str, args):
+    """
+    CatShift membership inference attack.
+    Trains ONE model on member data, evaluates on both member and non-member data.
+    """
     model = AutoModelForCausalLM.from_pretrained(model_name_hf,device_map='auto')
-    #model.to(device)
     model.eval()
     os.makedirs(f'output_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp',exist_ok=True)
     os.makedirs(f'model_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp',exist_ok=True)
     os.makedirs(f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp',exist_ok=True)
-    response_list = generate_responses(model,eval_dataset)
-    dump_jsonl(response_list,f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-{log_str}-orig.jsonl')
+    
+    # Generate responses from ORIGINAL model on BOTH member and non-member data
+    print(f"Generating responses from original model...")
+    member_response_list = generate_responses(model, member_eval_dataset)
+    dump_jsonl(member_response_list, f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-orig.jsonl')
+    
+    nonmember_response_list = generate_responses(model, nonmember_eval_dataset)
+    dump_jsonl(nonmember_response_list, f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-nonmember-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-orig.jsonl')
 
+    
     # Apply LoRA to the model
     model = get_peft_model(model, peft_config)
 
     # Define training arguments with mixed precision
     training_args = TrainingArguments(
-        output_dir=f"./output_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-{log_str}",
+        output_dir=f"./output_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}",
         evaluation_strategy="steps",
         learning_rate=args.lr,
         per_device_train_batch_size=8,
@@ -163,34 +173,37 @@ def run(train_dataset,eval_dataset,log_str, args):
         load_best_model_at_end=True,
     )
 
-    # Ensure the model and datasets are on the same device
-
-
     # Create the Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        eval_dataset=member_eval_dataset,  # Use member eval for monitoring
         data_collator=data_collator,
     )
 
-    # Train the model
+    # Train the model on member data
+    print(f"Training model on member data...")
     trainer.train()
 
     # Save the model
-    trainer.save_model(f"./model_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-{log_str}")
+    trainer.save_model(f"./model_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}")
 
     # Evaluate the model
     results = trainer.evaluate()
-    print("Evaluation results:")
+    print("Evaluation results on member data:")
     for key, value in results.items():
         print(f"{key}: {value}")
 
+    # Generate responses from FINE-TUNED model on BOTH member and non-member data
+    print(f"Generating responses from fine-tuned model on member data...")
     model.eval()
-    response_list = generate_responses(model,eval_dataset)
-    dump_jsonl(response_list,f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-{log_str}-ft.jsonl')
+    member_response_list = generate_responses(model, member_eval_dataset)
+    dump_jsonl(member_response_list, f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-ft.jsonl')
+    
+    print(f"Generating responses from fine-tuned model on non-member data...")
+    nonmember_response_list = generate_responses(model, nonmember_eval_dataset)
+    dump_jsonl(nonmember_response_list, f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-nonmember-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-ft.jsonl')
 
 
-run(A_members,B_members,f'member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}', args)
-run(A_nonmembers,B_nonmembers,f'nonmember-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}', args)
+run(A_members, B_members, B_nonmembers, f'member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}', args)

@@ -83,9 +83,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 bert_scorer = BERTScorer('roberta-large', device=device, rescale_with_baseline=True, lang='en')
 
 
-loss_file_member = f'/home/ubuntu/replication-test-catshift/copyright/output_ft_more_layers_{args.subname}_epoch_{args.epoch}_{args.logging}/pythia-{args.model}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}/checkpoint-675/trainer_state.json'
+loss_file_member = f'./output_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/pythia-{args.model}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}/checkpoint-675/trainer_state.json'
 
-loss_file_nonmember = f'/home/ubuntu/replication-test-catshift/copyright/output_ft_more_layers_{args.subname}_epoch_{args.epoch}_{args.logging}/pythia-{args.model}-nonmember-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}/checkpoint-675/trainer_state.json'
+loss_file_nonmember = f'./output_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/pythia-{args.model}-nonmember-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}/checkpoint-675/trainer_state.json'
 loss_datafile_member = json.load(open(loss_file_member))['log_history']
 loss_datafile_nonmember = json.load(open(loss_file_nonmember))['log_history']
 loss_l_member = []
@@ -119,8 +119,7 @@ ks_p_value_l=[]
 mw_p_value_l=[]
 auc_scores_l=[]
 
-
-    directory_path = f"/home/ubuntu/replication-test-catshift/copyright/output_ft_more_layers_{args.subname}_epoch_{args.epoch}_{args.logging}/pythia-{args.model}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}"
+directory_path = f"./output_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/pythia-{args.model}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}"
 numbers = get_num_from_directory(directory_path)
 numbers.sort()
 for num in numbers:
@@ -128,8 +127,8 @@ for num in numbers:
         print(f"#############{num}############")
         model_name = f'pythia-{args.model}'
         log_str = f'{candidate}-{args.model}-epoch-{args.epoch}'
-        response_orig = load_jsonl(f'/home/ubuntu/replication-test-catshift/copyright/responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_{args.logging}/{model_name}-{log_str}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-orig.jsonl')
-        response_ft = load_jsonl(f'/home/ubuntu/replication-test-catshift/copyright/responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_{args.logging}/all_checkpoint/{model_name}-{log_str}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-{num}-ft.jsonl')
+        response_orig = load_jsonl(f'./responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-{log_str}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-orig.jsonl')
+        response_ft = load_jsonl(f'./responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/all_checkpoint/{model_name}-{log_str}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-{num}-ft.jsonl')
         
         response_only_orig = []
         response_only_ft = []
