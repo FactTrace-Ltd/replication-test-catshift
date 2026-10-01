@@ -1,0 +1,16 @@
+{
+  "method": "CatShift (Catastrophic Forgetting)",
+  "subset": "Wikipedia (en)",
+  "model": "410m",
+  "epoch": 9,
+  "ft_size": 600,
+  "lr": 8e-05,
+  "auc": 0.3064990000000001,
+  "member_mean_similarity": -1.4156808853149414,
+  "member_std_similarity": 2.0205941200256348,
+  "nonmember_mean_similarity": -0.480711430311203,
+  "nonmember_std_similarity": 0.06908164918422699,
+  "ks_p_value": 0.0,
+  "mw_p_value": 0.0,
+  "ad_statistic": 376.93260824594586
+}

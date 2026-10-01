@@ -3,7 +3,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, DataCollatorForLanguageModeling
 import datasets
 from datasets import load_dataset
-from datasets import Dataset, DatasetDict
+from datasets import Dataset, DatasetDict, concatenate_datasets
 from peft import get_peft_model, LoraConfig, TaskType
 import json
 from tqdm import tqdm
@@ -133,6 +133,7 @@ peft_config = LoraConfig(
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 def run(train_dataset, member_eval_dataset, nonmember_eval_dataset, log_str, args):
     """
     CatShift membership inference attack.
@@ -156,6 +157,11 @@ def run(train_dataset, member_eval_dataset, nonmember_eval_dataset, log_str, arg
     # Apply LoRA to the model
     model = get_peft_model(model, peft_config)
 
+    # Combine member and non-member eval datasets
+    # Per paper: "model with lowest normalized combined loss (on both member and non-member sets)"
+    combined_eval_dataset = concatenate_datasets([member_eval_dataset, nonmember_eval_dataset])
+    print(f"Combined eval dataset size: {len(combined_eval_dataset)} (member: {len(member_eval_dataset)}, non-member: {len(nonmember_eval_dataset)})")
+
     # Define training arguments with mixed precision
     training_args = TrainingArguments(
         output_dir=f"./output_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}",
@@ -171,6 +177,8 @@ def run(train_dataset, member_eval_dataset, nonmember_eval_dataset, log_str, arg
         save_steps=10,
         fp16=True,  # Enable mixed precision training
         load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",  # Track combined eval loss
+        greater_is_better=False,  # Lower loss is better
     )
 
     # Create the Trainer
@@ -178,7 +186,7 @@ def run(train_dataset, member_eval_dataset, nonmember_eval_dataset, log_str, arg
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=member_eval_dataset,  # Use member eval for monitoring
+        eval_dataset=combined_eval_dataset,  # Use COMBINED eval dataset per paper
         data_collator=data_collator,
     )
 

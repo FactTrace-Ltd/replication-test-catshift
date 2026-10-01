@@ -1,0 +1,15 @@
+{
+  "subset": "Wikipedia (en)",
+  "model": "410m",
+  "epoch": 9,
+  "ft_size": 600,
+  "lr": 8e-05,
+  "auc": 0.513417,
+  "member_mean_score": -0.8580290079116821,
+  "member_std_score": 2.3529820442199707,
+  "nonmember_mean_score": -0.8391940593719482,
+  "nonmember_std_score": 2.3636221885681152,
+  "ks_p_value": 0.24068202078342438,
+  "mw_p_value": 0.2950885593891144,
+  "ad_statistic": -0.11318127285081493
+}
