@@ -1,57 +1,46 @@
-# catshift
-## System Requirements
-``` 
-pip install -r requirements.txt
-```
+# Research Projects
 
-### Other Requirements
+This workspace contains multiple research projects organized in separate folders.
 
-To run CatShift algorithm, you will need the download models (e.g [Pythia-410m](https://huggingface.co/EleutherAI/pythia-410m)).
+## Folder Structure
 
-As well as the GPU of:
-* NVIDIA A800
-* VRAM: 80GB
+### `/paper_reproduction/`
+CatShift paper reproduction - Dataset membership inference using catastrophic forgetting.
 
-### Software Requirement
+**Status:** Wikipedia subset training in progress (epoch 9/9)
 
-Ensure the following software is installed before you proceed with the installation of required Python dependencies and execution of the source code:
+**Contents:**
+- `src/` - Source code for training and evaluation
+- `scripts/` - Shell scripts for batch processing
+- `data/` - Input datasets (EuroParl, Pile subsets)
+- `models/` - Pretrained base models (Pythia-410m)
+- `results/` - Training outputs, models, and evaluation results
+  - `pile_subsets/` - Results organized by Pile subset
+  - `europarl_test/` - EuroParl test run results
+  - `logs/` - Training and evaluation logs
+- `README.md` - Full documentation
 
-* Python: It is recommended to use version 3.9 or higher.
-* pip or conda: Choose and install one of these package managers for Python. They are essential for installing and managing the Python packages needed.
-* Torch of 2.2.0 and Cuda 12.1.1 is recommended
-
-
-### Dataset
-We provide a sample dataset EuroParl due to the copyright concern which is located in [data_inference](./data_inference/) directory.
-
-## Running our code
-
-### Before Training
-Change the data file path to your local directory path in the following python files
-```
-main_pile_subset_saved_model_pythia.py
-generate_lowest_ft_more_layers.py
-eval_bert_test_all.py
-sum_norm_loss_pvalue.py
-```
-
-### Running
-1. First run to obtain all finetuning weights and checkpoints
+**Quick Start:**
 ```bash
-bash run_main_all_pile_saved_model.sh
+cd paper_reproduction/
+bash scripts/run_all_subsets.sh  # Run all 17 Pile subsets
 ```
 
-2. Inference each checkpoint by running
-```bash
-bash run_generate_lowest.sh
-```
+### `/llamat_transfer/`
+(Placeholder for next project - instructions to follow)
 
-3. Evaluate the bert score for each inference responses
-```bash
-bash run_bert_eval_ablation.sh
-```
+---
 
-4. Obtain the p-value and plots
-```bash
-bash run_plot_sum_loss_pvalue.sh
-```
+## Next Steps
+
+1. **Complete paper_reproduction:**
+   - Wait for Wikipedia run to finish (~1 hour from 20:47 UTC)
+   - Run additional Pile subsets or full 17 subsets
+   - Generate evaluation metrics and figures
+
+2. **Start llamat_transfer:**
+   - Follow instructions provided
+
+---
+
+For detailed documentation, see `paper_reproduction/README.md`

@@ -1,0 +1,9 @@
+transformers==4.47.0
+datasets
+peft==0.14.0
+sentence_transformers
+lm_dataformat
+nltk
+zstandard
+matplotlib
+bert_score
