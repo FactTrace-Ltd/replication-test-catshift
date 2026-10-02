@@ -5,12 +5,12 @@
   "epoch": 9,
   "ft_size": 600,
   "lr": 8e-05,
-  "auc": 0.3064990000000001,
-  "member_mean_similarity": -1.4156808853149414,
-  "member_std_similarity": 2.0205941200256348,
-  "nonmember_mean_similarity": -0.480711430311203,
-  "nonmember_std_similarity": 0.06908164918422699,
-  "ks_p_value": 0.0,
-  "mw_p_value": 0.0,
-  "ad_statistic": 376.93260824594586
+  "auc": 0.49999999999999994,
+  "member_mean_similarity": -0.5101303458213806,
+  "member_std_similarity": 0.0629330426454544,
+  "nonmember_mean_similarity": -0.5101303458213806,
+  "nonmember_std_similarity": 0.0629330426454544,
+  "ks_p_value": 1.0,
+  "mw_p_value": 1.0,
+  "ad_statistic": -1.3146384545742542
 }

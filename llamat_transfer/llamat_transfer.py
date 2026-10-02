@@ -42,13 +42,14 @@ from datetime import datetime
 # ============================================================================
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', type=str, default='llama-2-7b', help='Model name')
+parser.add_argument('--model', type=str, default='llamat-3', help='Model name')
 parser.add_argument('--epoch', type=int, default=3, help='Number of epochs')
 parser.add_argument('--suspect_size', type=int, default=600, help='Suspect papers for fine-tuning')
 parser.add_argument('--control_eval_size', type=int, default=200, help='Control papers for evaluation')
 parser.add_argument('--suspect_eval_size', type=int, default=200, help='Suspect papers for evaluation')
 parser.add_argument('--lr', type=float, default=2e-4, help='Learning rate')
 parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
+parser.add_argument('--aws_profile', type=str, default=None, help='AWS profile name (optional)')
 args = parser.parse_args()
 
 # Disable wandb logging
@@ -65,7 +66,9 @@ S3_METADATA_CONTROL = f"s3://{S3_BUCKET}/{S3_DATASET_PREFIX}/metadata/control"
 S3_XML_SUSPECT = f"s3://{S3_BUCKET}/{S3_DATASET_PREFIX}/raw_xml/suspect"
 S3_XML_CONTROL = f"s3://{S3_BUCKET}/{S3_DATASET_PREFIX}/raw_xml/control"
 
-s3_client = boto3.client('s3')
+# Initialize S3 client with optional AWS profile
+session = boto3.Session(profile_name=args.aws_profile) if args.aws_profile else boto3.Session()
+s3_client = session.client('s3')
 
 # ============================================================================
 # XML PARSING UTILITIES
@@ -86,8 +89,10 @@ def parse_jats_xml(xml_content):
             '': 'http://jats.nlm.nih.gov/publishing/1.2/'
         }
         
-        # Extract title
-        title = root.find('.//article-title') or root.find('.//title')
+        # Extract title - check explicitly for None instead of relying on truthiness
+        title = root.find('.//article-title')
+        if title is None:
+            title = root.find('.//title')
         if title is not None and title.text:
             text_parts.append(title.text.strip())
         
@@ -167,10 +172,12 @@ def load_papers_from_s3(group='suspect', num_papers=None):
         if not metadata:
             continue
         
-        # Get XML path
-        xml_path = metadata.get('xml_path', '').replace('datasets/', '')
-        if not xml_path:
+        # Construct correct XML path - use consolidated dataset path
+        doc_id = metadata.get('doc_id')
+        if not doc_id:
             continue
+        
+        xml_path = f"{S3_DATASET_PREFIX}/raw_xml/{group}/{doc_id}.xml"
         
         # Download XML
         xml_content = download_s3_file(S3_BUCKET, xml_path)
@@ -199,7 +206,7 @@ def load_papers_from_s3(group='suspect', num_papers=None):
 # ============================================================================
 
 print(f"Loading {args.model}...")
-model_name_hf = "meta-llama/Llama-2-7b-hf"
+model_name_hf = "m3rg-iitd/llamat-3"
 tokenizer = AutoTokenizer.from_pretrained(model_name_hf)
 tokenizer.padding_side = "left"
 
@@ -292,13 +299,9 @@ print(f"Combined eval dataset size: {len(combined_eval_dataset)}")
 # LORA CONFIGURATION
 # ============================================================================
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}\n")
-
-# Load base model
+# Load base model (Trainer will handle device placement)
 model = AutoModelForCausalLM.from_pretrained(
     model_name_hf,
-    device_map='auto',
     torch_dtype=torch.float16,
 )
 
@@ -323,31 +326,30 @@ data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 # ============================================================================
 
 def generate_responses(model, ds, temperature=0.0, top_p=1.0):
-    """Generate responses using batch decoding (matches original CatShift code)"""
+    """Generate responses - process one at a time to handle variable input lengths correctly"""
     model.eval()
-    inputs = torch.tensor([item['input_ids'] for item in ds]).to("cuda")
-    masks = torch.tensor([item['attention_mask'] for item in ds]).to("cuda")
-    num_input, input_len = inputs.shape
-    input_text = []
-    output_text = []
-    bs = 10
+    device = next(model.parameters()).device  # Get device from model
+    response_list = []
     
-    for i in tqdm(range(0, num_input, bs)):
+    for item in tqdm(ds):
+        input_ids = torch.tensor(item['input_ids']).reshape(1, -1).to(device)
+        attention_mask = torch.tensor(item['attention_mask']).reshape(1, -1).to(device)  # Move to device
+        actual_input_len = (attention_mask == 1).sum().item()  # Count non-padding tokens
+        
         pred = model.generate(
-            inputs=inputs[i:i+bs], 
-            attention_mask=masks[i:i+bs],
-            max_new_tokens=100, 
-            temperature=temperature, 
-            top_p=top_p,
+            input_ids,
+            attention_mask=attention_mask,  # Pass attention mask explicitly
+            max_new_tokens=100,
             pad_token_id=tokenizer.pad_token_id,
-            do_sample=False,  # Suppress temperature warning
+            do_sample=False,  # Greedy decoding - temperature/top_p ignored
         ).detach()
         
-        # Use batch_decode like original code (handles padding better)
-        input_text += tokenizer.batch_decode(pred[:, :input_len], skip_special_tokens=True)
-        output_text += tokenizer.batch_decode(pred[:, input_len:], skip_special_tokens=True)
+        # Slice using actual input length (not padded length)
+        input_text = tokenizer.decode(pred[0][:actual_input_len], skip_special_tokens=True)
+        output_text = tokenizer.decode(pred[0][actual_input_len:], skip_special_tokens=True)
+        response_list.append({'output_text': output_text, 'input_text': input_text})
 
-    return [{'output_text':a,'input_text':b} for a,b in zip(output_text,input_text)]
+    return response_list
 
 def dump_jsonl(data, file_path):
     """Save data to JSONL format"""

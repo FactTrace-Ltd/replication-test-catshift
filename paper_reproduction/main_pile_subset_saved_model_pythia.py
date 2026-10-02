@@ -25,7 +25,19 @@ os.environ["WANDB_DISABLED"] = "true"
 
 model_name = f'pythia-{args.model}'
 # Load the tokenizer and model
-model_name_hf = f"./pythia-{args.model}"  # Local model path (relative to this script)
+# Use absolute path to local model - check current directory first, then parent
+script_dir = os.path.dirname(os.path.abspath(__file__))
+model_in_script_dir = os.path.join(script_dir, f"pythia-{args.model}")
+parent_dir = os.path.dirname(script_dir)
+model_in_parent_dir = os.path.join(parent_dir, f"pythia-{args.model}")
+
+if os.path.exists(model_in_script_dir):
+    model_name_hf = model_in_script_dir
+elif os.path.exists(model_in_parent_dir):
+    model_name_hf = model_in_parent_dir
+else:
+    raise FileNotFoundError(f"Model not found in {model_in_script_dir} or {model_in_parent_dir}")
+
 tokenizer = AutoTokenizer.from_pretrained(model_name_hf)
 tokenizer.padding_side = "left"
 
@@ -83,7 +95,8 @@ print('!!!!!!!!!!!!!!!!inputs',input_len)
 print(tokenizer.decode(output[0][:input_len], skip_special_tokens=True))
 print('!!!!!!!!!!!!!!!!outputs',len(output[0])-input_len)
 print(tokenizer.decode(output[0][input_len:], skip_special_tokens=True))
-exit(0)
+# DEBUG TEST COMPLETE - continue with main training
+
 '''
 def load_jsonl(file_path):
     data = []
@@ -98,42 +111,31 @@ def dump_jsonl(data, file_path):
             json.dump(item, file)
             file.write('\n')
 
-def generate_responses(model,ds):
-    response_list = []
-    for item in tqdm(ds):
-        input_ids = torch.tensor(item['input_ids']).reshape(1,-1).to("cuda")
-        input_len = input_ids.shape[1]
-        pred = model.generate(input_ids, max_new_tokens=100)
-        input_text = tokenizer.decode(pred[0][:input_len], skip_special_tokens=True)
-        output_text = tokenizer.decode(pred[0][input_len:], skip_special_tokens=True)
-        response_list.append({'output_text':output_text,'input_text':input_text})
-    return response_list
-
 def generate_responses(model, ds, temperature=0.0, top_p=1.0):
-    """Generate responses using batch decoding (matches original code)"""
+    """Generate responses - process one at a time to handle variable input lengths correctly"""
+    response_list = []
     model.eval()
-    inputs = torch.tensor([item['input_ids'] for item in ds]).to("cuda")
-    masks = torch.tensor([item['attention_mask'] for item in ds]).to("cuda")
-    num_input, input_len = inputs.shape
-    input_text = []
-    output_text = []
-    bs = 10
     
-    for i in tqdm(range(0, num_input, bs)):
+    for item in tqdm(ds):
+        input_ids = torch.tensor(item['input_ids']).reshape(1, -1).to("cuda")
+        attention_mask = torch.tensor(item['attention_mask']).reshape(1, -1).to("cuda")  # Move to cuda
+        actual_input_len = (attention_mask == 1).sum().item()  # Count non-padding tokens
+        
         pred = model.generate(
-            inputs=inputs[i:i+bs], 
-            attention_mask=masks[i:i+bs],
+            input_ids, 
+            attention_mask=attention_mask,  # Pass attention mask explicitly
             max_new_tokens=100, 
-            temperature=temperature, 
-            top_p=top_p,
             pad_token_id=tokenizer.pad_token_id,
+            do_sample=False  # Greedy decoding - temperature/top_p ignored
         ).detach()
         
-        # Use batch_decode like original code (handles padding better)
-        input_text += tokenizer.batch_decode(pred[:, :input_len], skip_special_tokens=True)
-        output_text += tokenizer.batch_decode(pred[:, input_len:], skip_special_tokens=True)
+        # Slice using actual input length (not padded length)
+        input_text = tokenizer.decode(pred[0][:actual_input_len], skip_special_tokens=True)
+        output_text = tokenizer.decode(pred[0][actual_input_len:], skip_special_tokens=True)
+        response_list.append({'output_text': output_text, 'input_text': input_text})
+    
+    return response_list
 
-    return [{'output_text':a,'input_text':b} for a,b in zip(output_text,input_text)]
 
 # Define a data collator
 data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
