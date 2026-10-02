@@ -110,7 +110,7 @@ def generate_responses(model,ds):
     return response_list
 
 def generate_responses(model, ds, temperature=0.0, top_p=1.0):
-    """Generate responses with optional temperature and top_p sampling"""
+    """Generate responses using batch decoding (matches original code)"""
     model.eval()
     inputs = torch.tensor([item['input_ids'] for item in ds]).to("cuda")
     masks = torch.tensor([item['attention_mask'] for item in ds]).to("cuda")
@@ -126,28 +126,12 @@ def generate_responses(model, ds, temperature=0.0, top_p=1.0):
             max_new_tokens=100, 
             temperature=temperature, 
             top_p=top_p,
-            pad_token_id=tokenizer.pad_token_id,  # Explicit pad token for generation
+            pad_token_id=tokenizer.pad_token_id,
         ).detach()
         
-        # Decode input and output separately
-        for j in range(pred.shape[0]):
-            # Extract input tokens (first input_len tokens)
-            input_ids = pred[j, :input_len]
-            input_decoded = tokenizer.decode(input_ids, skip_special_tokens=True)
-            input_text.append(input_decoded)
-            
-            # Extract output tokens (after input_len)
-            output_ids = pred[j, input_len:]
-            # Remove pad tokens from the end
-            if tokenizer.pad_token_id is not None:
-                # Find last non-pad token
-                non_pad_mask = output_ids != tokenizer.pad_token_id
-                if non_pad_mask.any():
-                    last_non_pad = non_pad_mask.nonzero(as_tuple=True)[0].max().item()
-                    output_ids = output_ids[:last_non_pad+1]
-            
-            output_decoded = tokenizer.decode(output_ids, skip_special_tokens=True)
-            output_text.append(output_decoded)
+        # Use batch_decode like original code (handles padding better)
+        input_text += tokenizer.batch_decode(pred[:, :input_len], skip_special_tokens=True)
+        output_text += tokenizer.batch_decode(pred[:, input_len:], skip_special_tokens=True)
 
     return [{'output_text':a,'input_text':b} for a,b in zip(output_text,input_text)]
 
