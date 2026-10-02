@@ -28,10 +28,19 @@ model_name = f'pythia-{args.model}'
 model_name_hf = f"./pythia-{args.model}"  # Local model path (relative to this script)
 tokenizer = AutoTokenizer.from_pretrained(model_name_hf)
 tokenizer.padding_side = "left"
-# Add padding token if missing
+
+# Add proper padding token to avoid EOS-as-PAD issues during generation
 if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.pad_token_id = tokenizer.eos_token_id
+    # Try to use a special token first, or create one
+    if tokenizer.unk_token_id is not None:
+        tokenizer.pad_token = tokenizer.unk_token
+        tokenizer.pad_token_id = tokenizer.unk_token_id
+    else:
+        # Last resort: add a new pad token
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    
+    # Suppress the warning by directly setting the pad token
+    tokenizer.padding_side = "left"
 
 # process data - Load directly from HF Pile without saving to disk
 def load_pile_subset(subset_name, num_samples=2000):
@@ -100,20 +109,45 @@ def generate_responses(model,ds):
         response_list.append({'output_text':output_text,'input_text':input_text})
     return response_list
 
-def generate_responses(model,ds):
+def generate_responses(model, ds, temperature=0.0, top_p=1.0):
+    """Generate responses with optional temperature and top_p sampling"""
     model.eval()
-    #print(type(ds[0]))
-    #print(ds[0])
     inputs = torch.tensor([item['input_ids'] for item in ds]).to("cuda")
     masks = torch.tensor([item['attention_mask'] for item in ds]).to("cuda")
-    num_input,input_len = inputs.shape
+    num_input, input_len = inputs.shape
     input_text = []
     output_text = []
     bs = 10
-    for i in tqdm(range(0,num_input,bs)):
-        pred = model.generate(inputs=inputs[i:i+bs], attention_mask=masks[i:i+bs],max_new_tokens=100, temperature=0.0, top_p=1.0).detach()
-        input_text += tokenizer.batch_decode(pred[:,:input_len], skip_special_tokens=True)
-        output_text += tokenizer.batch_decode(pred[:,input_len:], skip_special_tokens=True)
+    
+    for i in tqdm(range(0, num_input, bs)):
+        pred = model.generate(
+            inputs=inputs[i:i+bs], 
+            attention_mask=masks[i:i+bs],
+            max_new_tokens=100, 
+            temperature=temperature, 
+            top_p=top_p,
+            pad_token_id=tokenizer.pad_token_id,  # Explicit pad token for generation
+        ).detach()
+        
+        # Decode input and output separately
+        for j in range(pred.shape[0]):
+            # Extract input tokens (first input_len tokens)
+            input_ids = pred[j, :input_len]
+            input_decoded = tokenizer.decode(input_ids, skip_special_tokens=True)
+            input_text.append(input_decoded)
+            
+            # Extract output tokens (after input_len)
+            output_ids = pred[j, input_len:]
+            # Remove pad tokens from the end
+            if tokenizer.pad_token_id is not None:
+                # Find last non-pad token
+                non_pad_mask = output_ids != tokenizer.pad_token_id
+                if non_pad_mask.any():
+                    last_non_pad = non_pad_mask.nonzero(as_tuple=True)[0].max().item()
+                    output_ids = output_ids[:last_non_pad+1]
+            
+            output_decoded = tokenizer.decode(output_ids, skip_special_tokens=True)
+            output_text.append(output_decoded)
 
     return [{'output_text':a,'input_text':b} for a,b in zip(output_text,input_text)]
 
@@ -147,10 +181,10 @@ def run(train_dataset, member_eval_dataset, nonmember_eval_dataset, log_str, arg
     
     # Generate responses from ORIGINAL model on BOTH member and non-member data
     print(f"Generating responses from original model...")
-    member_response_list = generate_responses(model, member_eval_dataset)
+    member_response_list = generate_responses(model, member_eval_dataset, temperature=0.0, top_p=1.0)
     dump_jsonl(member_response_list, f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-orig.jsonl')
     
-    nonmember_response_list = generate_responses(model, nonmember_eval_dataset)
+    nonmember_response_list = generate_responses(model, nonmember_eval_dataset, temperature=0.0, top_p=1.0)
     dump_jsonl(nonmember_response_list, f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-nonmember-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-orig.jsonl')
 
     
@@ -206,11 +240,11 @@ def run(train_dataset, member_eval_dataset, nonmember_eval_dataset, log_str, arg
     # Generate responses from FINE-TUNED model on BOTH member and non-member data
     print(f"Generating responses from fine-tuned model on member data...")
     model.eval()
-    member_response_list = generate_responses(model, member_eval_dataset)
+    member_response_list = generate_responses(model, member_eval_dataset, temperature=0.0, top_p=1.0)
     dump_jsonl(member_response_list, f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-member-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-ft.jsonl')
     
     print(f"Generating responses from fine-tuned model on non-member data...")
-    nonmember_response_list = generate_responses(model, nonmember_eval_dataset)
+    nonmember_response_list = generate_responses(model, nonmember_eval_dataset, temperature=0.0, top_p=1.0)
     dump_jsonl(nonmember_response_list, f'responses_ft_more_layers_{args.subname}_epoch_{args.epoch}_mlp/{model_name}-nonmember-{args.model}-epoch-{args.epoch}-pile-full-{args.size}-subsets-{args.subname}-{args.lr}-ft.jsonl')
 
 
