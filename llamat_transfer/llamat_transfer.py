@@ -203,9 +203,18 @@ model_name_hf = "meta-llama/Llama-2-7b-hf"
 tokenizer = AutoTokenizer.from_pretrained(model_name_hf)
 tokenizer.padding_side = "left"
 
+# Add proper padding token to avoid EOS-as-PAD issues during generation
 if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.pad_token_id = tokenizer.eos_token_id
+    # Try to use a special token first, or create one
+    if tokenizer.unk_token_id is not None:
+        tokenizer.pad_token = tokenizer.unk_token
+        tokenizer.pad_token_id = tokenizer.unk_token_id
+    else:
+        # Last resort: add a new pad token
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    
+    # Suppress the warning by directly setting the pad token
+    tokenizer.padding_side = "left"
 
 # ============================================================================
 # LOAD DATASET FROM S3
@@ -310,6 +319,45 @@ model.print_trainable_parameters()
 data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
 # ============================================================================
+# RESPONSE GENERATION FUNCTION
+# ============================================================================
+
+def generate_responses(model, ds, temperature=0.0, top_p=1.0):
+    """Generate responses using batch decoding (matches original CatShift code)"""
+    model.eval()
+    inputs = torch.tensor([item['input_ids'] for item in ds]).to("cuda")
+    masks = torch.tensor([item['attention_mask'] for item in ds]).to("cuda")
+    num_input, input_len = inputs.shape
+    input_text = []
+    output_text = []
+    bs = 10
+    
+    for i in tqdm(range(0, num_input, bs)):
+        pred = model.generate(
+            inputs=inputs[i:i+bs], 
+            attention_mask=masks[i:i+bs],
+            max_new_tokens=100, 
+            temperature=temperature, 
+            top_p=top_p,
+            pad_token_id=tokenizer.pad_token_id,
+            do_sample=False,  # Suppress temperature warning
+        ).detach()
+        
+        # Use batch_decode like original code (handles padding better)
+        input_text += tokenizer.batch_decode(pred[:, :input_len], skip_special_tokens=True)
+        output_text += tokenizer.batch_decode(pred[:, input_len:], skip_special_tokens=True)
+
+    return [{'output_text':a,'input_text':b} for a,b in zip(output_text,input_text)]
+
+def dump_jsonl(data, file_path):
+    """Save data to JSONL format"""
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, 'w') as file:
+        for item in data:
+            json.dump(item, file)
+            file.write('\n')
+
+# ============================================================================
 # TRAINING
 # ============================================================================
 
@@ -352,12 +400,34 @@ print(f"{'='*60}")
 print(f"Starting Fine-tuning on Suspect Papers")
 print(f"{'='*60}\n")
 
+# Generate responses from ORIGINAL model on BOTH suspect and control eval data
+print("Generating responses from original model...")
+suspect_eval_list = [{'input_ids': item['input_ids'], 'attention_mask': item['attention_mask']} for item in suspect_eval_dataset]
+control_eval_list = [{'input_ids': item['input_ids'], 'attention_mask': item['attention_mask']} for item in control_eval_dataset]
+
+suspect_response_orig = generate_responses(model, suspect_eval_list, temperature=0.0, top_p=1.0)
+control_response_orig = generate_responses(model, control_eval_list, temperature=0.0, top_p=1.0)
+
+responses_dir = f"./responses_llamat_auditing_{timestamp}"
+dump_jsonl(suspect_response_orig, f"{responses_dir}/suspect-orig.jsonl")
+dump_jsonl(control_response_orig, f"{responses_dir}/control-orig.jsonl")
+
+# Start training
 trainer.train()
 
 # Save the fine-tuned model
 print(f"\nSaving model to {model_dir}...")
 model.save_pretrained(model_dir)
 tokenizer.save_pretrained(model_dir)
+
+# Generate responses from FINE-TUNED model
+print("Generating responses from fine-tuned model...")
+model.eval()
+suspect_response_ft = generate_responses(model, suspect_eval_list, temperature=0.0, top_p=1.0)
+control_response_ft = generate_responses(model, control_eval_list, temperature=0.0, top_p=1.0)
+
+dump_jsonl(suspect_response_ft, f"{responses_dir}/suspect-ft.jsonl")
+dump_jsonl(control_response_ft, f"{responses_dir}/control-ft.jsonl")
 
 # Evaluation
 print("Evaluating on combined dataset...")
